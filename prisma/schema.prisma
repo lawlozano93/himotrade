@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Trade {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Trade Details
+  symbol          String
+  entryPrice      Float
+  exitPrice       Float?
+  quantity        Float
+  positionType    String   // "LONG" or "SHORT"
+  status          String   // "OPEN", "CLOSED", "CANCELLED"
+  
+  // Risk Management
+  stopLoss        Float?
+  takeProfit      Float?
+  riskRewardRatio Float?
+  
+  // Performance
+  pnl             Float?
+  pnlPercentage   Float?
+  
+  // Trade Context
+  timeframe       String?
+  marketCondition String?
+  strategy        String?
+  notes           String?
+  
+  // Emotional & Psychological
+  preTradeRating  Int?     // 1-5 rating of pre-trade confidence
+  postTradeRating Int?     // 1-5 rating of post-trade emotions
+  
+  // Tags
+  tags            Tag[]
+  
+  // Images/Screenshots
+  images          Image[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  trades    Trade[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Image {
+  id        String   @id @default(cuid())
+  url       String
+  tradeId   String
+  trade     Trade    @relation(fields: [tradeId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Strategy {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  trades      Trade[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Goal {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  target      Float
+  current     Float    @default(0)
+  deadline    DateTime?
+  status      String   // "ACTIVE", "COMPLETED", "FAILED"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+} 
