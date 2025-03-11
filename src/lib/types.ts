@@ -13,6 +13,10 @@ export type Trade = {
   stop_loss: number | null
   take_profit: number | null
   notes: string | null
+  risk_reward_ratio: number | null
+  pnl: number | null
+  asset_type: 'stocks' | 'forex' | 'crypto'
+  market: 'US' | 'PH' | null
   created_at?: string
   updated_at?: string
 }

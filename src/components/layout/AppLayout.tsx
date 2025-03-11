@@ -18,7 +18,6 @@ import {
 
 const navigation = [
   { name: 'Trades', href: '/trades', icon: History },
-  { name: 'New Trade', href: '/trades/new', icon: PlusCircle },
   { name: 'Analytics', href: '/analytics', icon: LineChart },
   { name: 'Settings', href: '/settings', icon: Settings }
 ]
@@ -88,7 +87,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="flex h-16 items-center justify-between px-4 border-b">
           <Link href="/trades" className="text-xl font-bold">
-            Trading Journal
+            HimoTrades
           </Link>
           <Button
             variant="ghost"
