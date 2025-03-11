@@ -1,125 +1,135 @@
-import { supabase } from '../services/supabase'
-import type { Trade, Strategy } from '../types'
+import { supabase } from '@/lib/services/supabase'
 
-const SYMBOLS = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'META', 'NFLX', 'NVDA']
-const STRATEGY_NAMES = ['Trend Following', 'Breakout', 'Mean Reversion', 'Momentum']
+type AssetType = 'stocks' | 'forex' | 'crypto'
+type Market = 'US' | 'PH'
 
-function randomDate(start: Date, end: Date) {
-  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime())).toISOString()
+const STOCK_SYMBOLS = {
+  US: ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'WMT'],
+  PH: ['SM', 'ALI', 'BDO', 'AC', 'JFC', 'TEL', 'BPI', 'MER', 'AP', 'URC']
 }
 
-function randomPrice(min: number, max: number) {
-  return Number((Math.random() * (max - min) + min).toFixed(2))
-}
+const FOREX_PAIRS = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD']
+const CRYPTO_SYMBOLS = ['BTC/USD', 'ETH/USD', 'BNB/USD', 'XRP/USD', 'ADA/USD', 'SOL/USD']
 
-async function clearExistingData(userId: string) {
-  // Delete existing trades first (due to foreign key constraints)
-  const { error: tradesError } = await supabase
-    .from('trades')
-    .delete()
-    .eq('user_id', userId)
-
-  if (tradesError) {
-    console.error('Error deleting existing trades:', tradesError)
-    throw tradesError
-  }
-
-  // Then delete existing strategies
-  const { error: strategiesError } = await supabase
-    .from('strategies')
-    .delete()
-    .eq('user_id', userId)
-
-  if (strategiesError) {
-    console.error('Error deleting existing strategies:', strategiesError)
-    throw strategiesError
+function getRandomSymbol(assetType: AssetType, market?: Market) {
+  if (assetType === 'stocks' && market) {
+    const symbols = STOCK_SYMBOLS[market]
+    return symbols[Math.floor(Math.random() * symbols.length)]
+  } else if (assetType === 'forex') {
+    return FOREX_PAIRS[Math.floor(Math.random() * FOREX_PAIRS.length)]
+  } else {
+    return CRYPTO_SYMBOLS[Math.floor(Math.random() * CRYPTO_SYMBOLS.length)]
   }
 }
 
-async function createStrategies(userId: string): Promise<Strategy[]> {
-  console.log('Creating strategies for user:', userId)
-  
-  const strategies: Strategy[] = STRATEGY_NAMES.map(name => ({
-    user_id: userId,
-    name,
-    description: `${name} trading strategy`,
-  }))
-
-  const { data, error } = await supabase
-    .from('strategies')
-    .insert(strategies)
-    .select()
-
-  if (error) {
-    console.error('Error creating strategies:', error)
-    throw error
-  }
-
-  console.log('Created strategies:', data)
-  return data
+function getRandomPrice() {
+  return Math.round(Math.random() * 1000 * 100) / 100
 }
 
-async function createTrades(userId: string, strategies: Strategy[], numTrades: number = 50) {
-  console.log('Creating trades for user:', userId)
-  console.log('Using strategies:', strategies)
-  
-  const startDate = new Date('2024-01-01')
-  const endDate = new Date()
-  const trades: Trade[] = []
-
-  for (let i = 0; i < numTrades; i++) {
-    const entryDate = randomDate(startDate, endDate)
-    const exitDate = Math.random() > 0.2 ? randomDate(new Date(entryDate), endDate) : null
-    const entryPrice = randomPrice(100, 1000)
-    const exitPrice = exitDate ? randomPrice(entryPrice * 0.8, entryPrice * 1.2) : null
-    const status = exitDate ? 'closed' : 'open'
-
-    trades.push({
-      user_id: userId,
-      symbol: SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-      side: Math.random() > 0.5 ? 'long' : 'short',
-      entry_price: entryPrice,
-      exit_price: exitPrice,
-      quantity: Math.floor(Math.random() * 100) + 1,
-      status,
-      strategy_id: strategies[Math.floor(Math.random() * strategies.length)].id!,
-      entry_date: entryDate,
-      exit_date: exitDate,
-      stop_loss: entryPrice * 0.95,
-      take_profit: entryPrice * 1.15,
-      notes: Math.random() > 0.7 ? 'Example trade notes' : null,
-    })
-  }
-
-  const { error } = await supabase
-    .from('trades')
-    .insert(trades)
-
-  if (error) {
-    console.error('Error creating trades:', error)
-    throw error
-  }
-
-  console.log('Created trades:', trades.length)
+function getRandomQuantity() {
+  return Math.round(Math.random() * 100)
 }
 
 export async function seedData(userId: string) {
   try {
-    console.log('Starting seed process for user:', userId)
-    
-    // Clear existing data first
-    await clearExistingData(userId)
-    
-    // Create new strategies
-    const strategies = await createStrategies(userId)
-    
-    // Create new trades
-    await createTrades(userId, strategies)
+    // First, delete existing trades for this user
+    const { error: deleteError } = await supabase
+      .from('trades')
+      .delete()
+      .eq('user_id', userId)
 
-    console.log('Seed process completed successfully')
+    if (deleteError) throw deleteError
+
+    // Get user's portfolios
+    const { data: portfolios, error: portfolioError } = await supabase
+      .from('portfolios')
+      .select('id, currency')
+      .eq('user_id', userId)
+
+    if (portfolioError) throw portfolioError
+    if (!portfolios?.length) {
+      console.error("No portfolios found for user")
+      return { success: false, error: "No portfolios found" }
+    }
+
+    // Create some strategies first
+    const strategies = [
+      'Trend Following',
+      'Mean Reversion',
+      'Breakout',
+      'Swing Trading',
+      'Scalping'
+    ]
+
+    const { data: strategyData, error: strategyError } = await supabase
+      .from('strategies')
+      .upsert(
+        strategies.map(name => ({
+          user_id: userId,
+          name
+        }))
+      )
+      .select()
+
+    if (strategyError) throw strategyError
+
+    // Generate random trades
+    const trades = []
+    const numberOfTrades = 20
+    const assetTypes: AssetType[] = ['stocks', 'forex', 'crypto']
+    const markets: Market[] = ['US', 'PH']
+
+    for (let i = 0; i < numberOfTrades; i++) {
+      const assetType = assetTypes[Math.floor(Math.random() * assetTypes.length)]
+      const market = assetType === 'stocks' ? markets[Math.floor(Math.random() * markets.length)] : null
+      const symbol = getRandomSymbol(assetType, market || undefined)
+      const entry_price = getRandomPrice()
+      const isOpen = Math.random() > 0.5
+      const exit_price = isOpen ? null : entry_price * (1 + (Math.random() * 0.2 - 0.1)) // ±10% from entry
+      const side = Math.random() > 0.5 ? 'long' : 'short'
+      const quantity = getRandomQuantity()
+      const stop_loss = entry_price * (side === 'long' ? 0.95 : 1.05)
+      const take_profit = entry_price * (side === 'long' ? 1.1 : 0.9)
+      const entry_date = new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000)
+
+      // Select appropriate portfolio based on asset type
+      const portfolio = portfolios.find(p => 
+        (assetType === 'stocks' && market === 'US' && p.currency === 'USD') ||
+        (assetType === 'stocks' && market === 'PH' && p.currency === 'PHP') ||
+        (assetType !== 'stocks')
+      )
+
+      if (!portfolio) continue
+
+      trades.push({
+        user_id: userId,
+        portfolio_id: portfolio.id,
+        symbol,
+        side,
+        entry_price,
+        exit_price,
+        quantity,
+        status: isOpen ? 'open' : 'closed',
+        strategy_id: strategyData?.[Math.floor(Math.random() * strategyData.length)]?.id,
+        entry_date: entry_date.toISOString(),
+        exit_date: isOpen ? null : new Date(entry_date.getTime() + Math.random() * 15 * 24 * 60 * 60 * 1000).toISOString(),
+        stop_loss,
+        take_profit,
+        notes: `Sample ${assetType.toUpperCase()} trade${market ? ` in ${market} market` : ''}`,
+        asset_type: assetType,
+        market
+      })
+    }
+
+    const { error: insertError } = await supabase
+      .from('trades')
+      .insert(trades)
+
+    if (insertError) throw insertError
+
     return { success: true }
   } catch (error) {
-    console.error('Error in seed process:', error)
+    console.error('Error seeding data:', error)
     return { success: false, error }
   }
 } 

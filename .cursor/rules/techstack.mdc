@@ -1,0 +1,8 @@
+---
+description: TechStack
+globs: 
+alwaysApply: false
+---
+FrontEnd: NextJS (React), Typescript
+Database & Backend: Supabase
+UI Components: Shadcn/ui
