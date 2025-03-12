@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { supabase } from '@/lib/services/supabase'
+import { authService } from '@/lib/services/auth'
 import { cn } from '@/lib/utils'
 import {
   LineChart,
@@ -13,11 +13,13 @@ import {
   History,
   Menu,
   X,
-  LogOut
+  LogOut,
+  TrendingUp
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Trades', href: '/trades', icon: History },
+  { name: 'Performance', href: '/performance', icon: TrendingUp },
   { name: 'Analytics', href: '/analytics', icon: LineChart },
   { name: 'Settings', href: '/settings', icon: Settings }
 ]
@@ -25,51 +27,16 @@ const navigation = [
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [loading, setLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session && !['/login', '/signup'].includes(pathname)) {
-          router.push('/login')
-        }
-      } catch (error) {
-        console.error('Error checking session:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    checkSession()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        router.push('/login')
-      } else if (event === 'SIGNED_IN' && pathname === '/login') {
-        router.push('/trades')
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [router, pathname])
-
-  if (loading) {
-    return <div>Loading...</div>
-  }
-
+  // Don't show the layout for auth pages
   if (['/login', '/signup'].includes(pathname)) {
     return <>{children}</>
   }
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut()
+      await authService.signOut()
       router.push('/login')
     } catch (error) {
       console.error('Error signing out:', error)
@@ -81,67 +48,89 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r transform transition-transform duration-200 ease-in-out",
-          !isSidebarOpen && "-translate-x-full"
+          'fixed inset-y-0 left-0 z-50 w-64 transform bg-card transition-transform duration-200 ease-in-out md:translate-x-0',
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-16 items-center justify-between px-4 border-b">
-          <Link href="/trades" className="text-xl font-bold">
-            HimoTrades
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <nav className="p-4 space-y-1">
-          {navigation.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-accent transition-colors",
-                pathname === item.href
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground"
-              )}
+        <div className="flex h-full flex-col">
+          {/* Sidebar header */}
+          <div className="flex h-16 items-center justify-between px-4">
+            <span className="text-lg font-semibold">Trading Journal</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setIsSidebarOpen(false)}
             >
-              <item.icon className="h-4 w-4" />
-              <span>{item.name}</span>
-            </Link>
-          ))}
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-2 mt-4 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            onClick={handleSignOut}
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </Button>
-        </nav>
+              <X className="h-6 w-6" />
+            </Button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 space-y-1 px-2 py-4">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={cn(
+                    'group flex items-center rounded-md px-2 py-2 text-sm font-medium',
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  )}
+                >
+                  <item.icon className="mr-3 h-5 w-5" />
+                  {item.name}
+                </Link>
+              )
+            })}
+          </nav>
+
+          {/* Add Trade Button */}
+          <div className="px-4 py-4">
+            <Button className="w-full" onClick={() => router.push('/trades/new')}>
+              <PlusCircle className="mr-2 h-5 w-5" />
+              Add Trade
+            </Button>
+          </div>
+
+          {/* Sign Out Button */}
+          <div className="px-4 py-4">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleSignOut}
+            >
+              <LogOut className="mr-2 h-5 w-5" />
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile sidebar toggle */}
+      <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-border bg-background px-4 md:hidden">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsSidebarOpen(true)}
+        >
+          <Menu className="h-6 w-6" />
+        </Button>
       </div>
 
       {/* Main content */}
-      <div
-        className={cn(
-          "transition-all duration-200 ease-in-out",
-          isSidebarOpen ? "lg:pl-64" : "pl-0"
-        )}
-      >
-        <div className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background px-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          >
-            <Menu className="h-4 w-4" />
-          </Button>
-        </div>
-        <main className="container py-8">{children}</main>
+      <div className={cn(
+        'min-h-screen transition-all duration-200 ease-in-out',
+        isSidebarOpen ? 'md:pl-64' : ''
+      )}>
+        <main className="py-6">
+          <div className="px-4 sm:px-6 lg:px-8">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   )

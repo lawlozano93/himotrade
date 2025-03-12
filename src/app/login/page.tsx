@@ -7,12 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { supabase } from '@/lib/services/supabase'
+import { useToast } from '@/components/ui/use-toast'
+import { authService, AuthenticationError } from '@/lib/services/auth'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -20,23 +21,35 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      })
+      const { session } = await authService.signIn(formData.email, formData.password)
 
-      if (error) throw error
+      if (session) {
+        // Get the redirect URL from the query params or default to /trades
+        const params = new URLSearchParams(window.location.search)
+        const redirectTo = params.get('from') || '/trades'
+        
+        toast({
+          title: 'Login successful',
+          description: 'Redirecting...',
+        })
 
-      if (data?.user) {
-        router.push('/trades')
-        router.refresh()
+        router.push(redirectTo)
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in')
+    } catch (error) {
+      console.error('Login error:', error)
+      
+      const message = error instanceof AuthenticationError
+        ? error.originalError.message
+        : 'An unexpected error occurred'
+      
+      toast({
+        variant: 'destructive',
+        title: 'Login failed',
+        description: message,
+      })
     } finally {
       setLoading(false)
     }
@@ -77,12 +90,6 @@ export default function LoginPage() {
                 required
               />
             </div>
-
-            {error && (
-              <div className="text-sm text-red-500">
-                {error}
-              </div>
-            )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
