@@ -159,7 +159,6 @@ function calculateMetrics(trades: any[]) {
   let totalPnL = 0
   let totalProfit = 0
   let totalLoss = 0
-  let totalRR = 0
 
   trades.forEach(trade => {
     const pnl = calculateTradePnL(trade)
@@ -171,18 +170,12 @@ function calculateMetrics(trades: any[]) {
     } else {
       totalLoss += Math.abs(pnl)
     }
-
-    if (trade.stop_loss && trade.take_profit) {
-      const risk = Math.abs(trade.entry_price - trade.stop_loss)
-      const reward = Math.abs(trade.take_profit - trade.entry_price)
-      totalRR += reward / risk
-    }
   })
 
   return {
     winRate: (wins / trades.length) * 100,
     profitFactor: totalLoss === 0 ? totalProfit : totalProfit / totalLoss,
-    averageRR: totalRR / trades.length,
+    averageRR: 0,
     totalPnL
   }
 } 

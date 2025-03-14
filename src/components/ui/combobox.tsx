@@ -1,85 +1,128 @@
-import * as React from "react"
-import { Check, ChevronsUpDown } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+'use client'
+
+import * as React from 'react'
+import { CheckIcon, ChevronsUpDownIcon, X } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Input } from "@/components/ui/input"
+} from '@/components/ui/popover'
+import { type StockOption } from '@/lib/services/phStockService'
 
-interface ComboboxOption {
+export type ComboboxItem = {
+  label: string
   value: string
-  label?: string
 }
 
 interface ComboboxProps {
-  options: ComboboxOption[]
+  items: ComboboxItem[]
   value: string
   onValueChange: (value: string) => void
   placeholder?: string
-  emptyMessage?: string
+  emptyText?: string
   className?: string
   disabled?: boolean
 }
 
 export function Combobox({
-  options,
+  items = [],
   value,
   onValueChange,
-  placeholder = "Select an option",
-  emptyMessage = "No results found",
+  placeholder = 'Select an item...',
+  emptyText = 'No items found.',
   className,
-  disabled = false,
+  disabled,
 }: ComboboxProps) {
-  const [open, setOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState("")
-  const [highlightedIndex, setHighlightedIndex] = React.useState(-1)
-  const scrollViewportRef = React.useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const itemsRef = useRef<Array<HTMLDivElement | null>>([])
+  
+  const filteredItems = React.useMemo(() => {
+    if (!searchQuery) return items
+    return items.filter((item) => 
+      item.value.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [items, searchQuery])
+  
+  // Focus the input when the dropdown opens
+  useEffect(() => {
+    if (open && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [open])
+  
+  // Reset highlighted index when filtered items change
+  useEffect(() => {
+    setHighlightedIndex(0)
+  }, [filteredItems.length])
 
-  // Filter options based on search query
-  const filteredOptions = React.useMemo(() => {
-    if (!searchQuery) return options
-    
-    return options.filter(option => {
-      const label = option.label || option.value
-      return label.toLowerCase().includes(searchQuery.toLowerCase())
-    })
-  }, [options, searchQuery])
-
-  // Reset highlighted index when options change
-  React.useEffect(() => {
-    setHighlightedIndex(-1)
-  }, [searchQuery])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!open) return
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault()
-        setHighlightedIndex(prev => 
-          prev < filteredOptions.length - 1 ? prev + 1 : prev
-        )
-        break
-      case "ArrowUp":
-        e.preventDefault()
-        setHighlightedIndex(prev => prev > 0 ? prev - 1 : prev)
-        break
-      case "Enter":
-        e.preventDefault()
-        if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
-          const selectedOption = filteredOptions[highlightedIndex]
-          onValueChange(selectedOption.value === value ? "" : selectedOption.value)
-          setOpen(false)
-          setSearchQuery("")
+  const handleSelect = (itemValue: string) => {
+    onValueChange(itemValue)
+    setSearchQuery("")
+    setOpen(false)
+  }
+  
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onValueChange('')
+    setOpen(false)
+  }
+  
+  // Scroll the highlighted item into view
+  useEffect(() => {
+    if (listRef.current && itemsRef.current[highlightedIndex]) {
+      const list = listRef.current
+      const item = itemsRef.current[highlightedIndex]
+      
+      if (item) {
+        const listRect = list.getBoundingClientRect()
+        const itemRect = item.getBoundingClientRect()
+        
+        if (itemRect.bottom > listRect.bottom) {
+          // Scroll down if the item is below the visible area
+          list.scrollTop += itemRect.bottom - listRect.bottom
+        } else if (itemRect.top < listRect.top) {
+          // Scroll up if the item is above the visible area
+          list.scrollTop -= listRect.top - itemRect.top
         }
-        break
-      case "Escape":
-        setOpen(false)
-        break
+      }
+    }
+  }, [highlightedIndex])
+  
+  // Handle keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      if (filteredItems.length > 0) {
+        setHighlightedIndex(prev => 
+          prev < filteredItems.length - 1 ? prev + 1 : prev
+        )
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      setHighlightedIndex(prev => prev > 0 ? prev - 1 : 0)
+    } else if (e.key === "Enter") {
+      e.preventDefault()
+      if (filteredItems.length > 0) {
+        handleSelect(filteredItems[highlightedIndex].value)
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false)
+    }
+  }
+  
+  // Handle wheel scrolling
+  const handleWheel = (e: React.WheelEvent) => {
+    if (listRef.current) {
+      e.stopPropagation()
+      listRef.current.scrollTop += e.deltaY
     }
   }
 
@@ -87,74 +130,75 @@ export function Combobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
-          role="combobox"
           aria-expanded={open}
-          className={cn("w-full justify-between", className)}
+          className={cn(
+            'h-10 w-full justify-between overflow-hidden text-ellipsis',
+            className
+          )}
           disabled={disabled}
+          role="combobox"
+          variant="outline"
         >
-          {value
-            ? options.find((option) => option.value === value)?.label || value
-            : placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          {value || placeholder}
+          {disabled ? null : value ? (
+            <X
+              className="h-4 w-4 shrink-0 cursor-pointer opacity-50"
+              onClick={handleClear}
+            />
+          ) : (
+            <ChevronsUpDownIcon className="h-4 w-4 shrink-0 opacity-50" />
+          )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0" align="start">
-        <div className="flex flex-col" onKeyDown={handleKeyDown}>
+      <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[var(--radix-popover-trigger-width)] p-0">
+        <div className="flex flex-col" onWheel={e => e.stopPropagation()}>
           <div className="flex items-center border-b px-3">
             <Input
-              placeholder={`Search ${placeholder.toLowerCase()}...`}
+              ref={inputRef}
+              placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 w-full bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="h-10 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+              onKeyDown={handleKeyDown}
             />
           </div>
-          <ScrollArea 
-            className="h-[200px]"
-            onWheel={(e) => {
-              e.stopPropagation()
-              if (scrollViewportRef.current) {
-                scrollViewportRef.current.scrollTop += e.deltaY
-              }
-            }}
+          
+          <div 
+            ref={listRef}
+            className="max-h-[200px] overflow-y-auto"
+            tabIndex={-1}
+            onKeyDown={handleKeyDown}
+            onWheel={handleWheel}
+            style={{ willChange: 'scroll-position' }}
           >
-            <div 
-              ref={scrollViewportRef} 
-              className="overflow-auto"
-            >
-              <div className="p-1">
-                {filteredOptions.length === 0 ? (
-                  <div className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none text-muted-foreground">
-                    {emptyMessage}
-                  </div>
-                ) : (
-                  filteredOptions.map((option, index) => (
-                    <div
-                      key={option.value}
-                      onClick={() => {
-                        onValueChange(option.value === value ? "" : option.value)
-                        setOpen(false)
-                        setSearchQuery("")
-                      }}
-                      onMouseEnter={() => setHighlightedIndex(index)}
-                      className={cn(
-                        "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
-                        (value === option.value || highlightedIndex === index) && "bg-accent text-accent-foreground"
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4 flex-shrink-0",
-                          value === option.value ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                      {option.label || option.value}
-                    </div>
-                  ))
-                )}
+            {filteredItems.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {emptyText}
               </div>
-            </div>
-          </ScrollArea>
+            ) : (
+              <div className="p-1">
+                {filteredItems.map((item, index) => (
+                  <div
+                    ref={(el) => {
+                      itemsRef.current[index] = el;
+                    }}
+                    key={item.value}
+                    className={cn(
+                      'relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none',
+                      (highlightedIndex === index || value === item.value) && 'bg-accent text-accent-foreground'
+                    )}
+                    onClick={() => handleSelect(item.value)}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                  >
+                    <span className={cn('mr-2 h-4 w-4', value === item.value ? 'opacity-100' : 'opacity-0')}>
+                      <CheckIcon className="h-4 w-4" />
+                    </span>
+                    {item.value}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </PopoverContent>
     </Popover>

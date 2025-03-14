@@ -15,7 +15,10 @@ CREATE INDEX IF NOT EXISTS idx_trades_strategy_id ON trades(strategy_id);
 
 -- Update the trigger to handle updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
 BEGIN
     NEW.updated_at = timezone('utc'::text, now());
     RETURN NEW;

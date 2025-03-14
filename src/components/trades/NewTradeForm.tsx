@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/services/supabase'
-import { toast } from 'sonner'
+import { useToast } from '@/components/ui/use-toast'
 import {
   Select,
   SelectContent,
@@ -14,269 +14,312 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { Check, ChevronsUpDown } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { STOCK_SYMBOLS, FOREX_PAIRS, CRYPTO_SYMBOLS } from '@/lib/data/stockSymbols'
-import { getPhStocks, DEFAULT_PH_STOCKS } from '@/lib/services/phStockService'
 import { Combobox } from '@/components/ui/combobox'
+import { getPhStocks, DEFAULT_PH_STOCKS, type StockOption } from '@/lib/services/phStockService'
+import { useRouter } from 'next/navigation'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import * as z from 'zod'
+import { tradeService } from '@/lib/services/tradeService'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
-type Strategy = {
+interface Strategy {
   id: string
   name: string
 }
 
-type AssetType = 'stocks' | 'forex' | 'crypto'
-type Market = 'US' | 'PH'
+const formSchema = z.object({
+  symbol: z.string().min(1, 'Stock symbol is required'),
+  entry_price: z.coerce.number().min(0.01, 'Entry price must be greater than 0'),
+  quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
+  strategy_id: z.string().optional(),
+  portfolio_id: z.string().min(1, 'Portfolio is required'),
+})
 
-export function NewTradeForm({ onSuccess }: { onSuccess: () => void }) {
+type FormValues = z.infer<typeof formSchema>
+
+export function NewTradeForm() {
   const { user } = useUser()
+  const { toast } = useToast()
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [strategies, setStrategies] = useState<Strategy[]>([])
-  const [symbolPopoverOpen, setSymbolPopoverOpen] = useState(false)
-  const [phStocks, setPhStocks] = useState<string[]>(DEFAULT_PH_STOCKS)
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(false)
-  const [formData, setFormData] = useState({
-    symbol: '',
-    side: 'long',
-    entry_price: '',
-    quantity: '',
-    stop_loss: '',
-    take_profit: '',
-    strategy_id: '',
-    notes: '',
-    asset_type: 'stocks' as AssetType,
-    market: 'PH' as Market
+  const [stocks, setStocks] = useState<StockOption[]>(DEFAULT_PH_STOCKS)
+  const [portfolios, setPortfolios] = useState<{id: string, name: string}[]>([])
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      symbol: '',
+      entry_price: undefined,
+      quantity: undefined,
+      strategy_id: '',
+      portfolio_id: '',
+    },
   })
 
-  const [availableSymbols, setAvailableSymbols] = useState<{ value: string, label: string }[]>([])
+  useEffect(() => {
+    // Fetch strategies when component mounts
+    const fetchStrategies = async () => {
+      try {
+        const { data: strategiesData, error } = await supabase
+          .from('strategies')
+          .select('*')
+          .order('name')
+
+        if (error) throw error
+        setStrategies(strategiesData || [])
+      } catch (error) {
+        console.error('Error fetching strategies:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load strategies',
+          variant: 'destructive',
+        })
+      }
+    }
+
+    // Fetch portfolios
+    const fetchPortfolios = async () => {
+      try {
+        const { data: portfoliosData, error } = await supabase
+          .from('portfolios')
+          .select('*')
+          .eq('user_id', user?.id)
+          .order('name')
+
+        if (error) throw error
+        setPortfolios(portfoliosData || [])
+        
+        // Set default portfolio if available
+        if (portfoliosData && portfoliosData.length > 0) {
+          form.setValue('portfolio_id', portfoliosData[0].id)
+        }
+      } catch (error) {
+        console.error('Error fetching portfolios:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load portfolios',
+          variant: 'destructive',
+        })
+      }
+    }
+
+    fetchStrategies()
+    if (user?.id) {
+      fetchPortfolios()
+    }
+  }, [toast, user?.id, form])
 
   useEffect(() => {
     // Fetch PH stocks when component mounts
-    async function fetchPhStocks() {
+    const fetchPhStocks = async () => {
       try {
         setIsLoadingSymbols(true)
-        // First set default stocks to avoid the empty state
-        setPhStocks(DEFAULT_PH_STOCKS)
-        
-        // Then fetch from API
-        const stocks = await getPhStocks()
-        if (stocks.length > 0) {
-          setPhStocks(stocks)
-        }
+        const fetchedStocks = await getPhStocks()
+        setStocks(fetchedStocks)
       } catch (error) {
         console.error('Error fetching PH stocks:', error)
-        toast.error('Failed to load PH stocks')
+        toast({
+          title: 'Warning',
+          description: 'Using default stock list due to API error',
+          variant: 'destructive',
+        })
+        setStocks(DEFAULT_PH_STOCKS)
       } finally {
         setIsLoadingSymbols(false)
       }
     }
 
     fetchPhStocks()
-  }, [])
+  }, [toast])
 
-  useEffect(() => {
-    // Update available symbols
-    setAvailableSymbols(
-      phStocks.map(symbol => ({ value: symbol, label: symbol }))
-    )
-  }, [phStocks])
-
-  useEffect(() => {
-    console.log("Combobox props:", {
-      isLoadingSymbols,
-      availableSymbolsLength: availableSymbols.length,
-      disabled: isLoadingSymbols || availableSymbols.length === 0
-    });
-  }, [isLoadingSymbols, availableSymbols]);
-
-  useEffect(() => {
-    async function fetchStrategies() {
-      if (!user?.id) return
-
-      try {
-        const { data, error } = await supabase
-          .from('strategies')
-          .select('id, name')
-          .eq('user_id', user.id)
-
-        if (error) throw error
-        setStrategies(data || [])
-      } catch (error) {
-        console.error('Error fetching strategies:', error)
-        toast.error('Failed to load strategies')
-      }
-    }
-
-    fetchStrategies()
-  }, [user?.id])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!user?.id || loading) return
-
+  async function onSubmit(values: FormValues) {
+    setLoading(true)
+    
     try {
-      setLoading(true)
-
-      // Validate required fields
-      if (!formData.symbol || !formData.entry_price || !formData.quantity) {
-        toast.error('Please fill in all required fields')
-        return
+      if (!values.portfolio_id || !values.symbol || !values.entry_price || !values.quantity) {
+        throw new Error("All required fields must be provided")
       }
-
-      const { error } = await supabase.from('trades').insert([
-        {
-          user_id: user.id,
-          symbol: formData.symbol,
-          side: formData.side,
-          entry_price: parseFloat(formData.entry_price),
-          quantity: parseInt(formData.quantity),
-          stop_loss: formData.stop_loss ? parseFloat(formData.stop_loss) : null,
-          take_profit: formData.take_profit ? parseFloat(formData.take_profit) : null,
-          strategy_id: formData.strategy_id || null,
-          notes: formData.notes,
-          status: 'open',
-          asset_type: formData.asset_type,
-          market: formData.market,
-          created_at: new Date().toISOString()
-        }
-      ])
-
-      if (error) throw error
-
-      toast.success('Trade added successfully')
-      onSuccess()
+      
+      // Get the freshest user directly from Supabase auth
+      const supabase = createClientComponentClient()
+      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !currentUser) {
+        console.error("Error getting current user:", userError)
+        toast({
+          title: "Authentication Error",
+          description: "Please try logging out and back in again.",
+          variant: "destructive"
+        })
+        throw new Error("You must be logged in to create a trade")
+      }
+      
+      console.log("Creating trade with user_id:", currentUser.id)
+      
+      const result = await tradeService.createTrade({
+        user_id: currentUser.id,
+        portfolio_id: values.portfolio_id,
+        symbol: values.symbol,
+        entry_price: values.entry_price,
+        quantity: values.quantity,
+        side: 'long', // Default to long
+        entry_date: new Date().toISOString(),
+        strategy_id: values.strategy_id || null,
+      })
+      
+      toast({
+        title: 'Success',
+        description: result.merged 
+          ? `Added to existing ${values.symbol} position` 
+          : 'New trade created successfully',
+      })
+      router.push('/trades')
+      router.refresh()
     } catch (error) {
-      console.error('Error adding trade:', error)
-      toast.error('Failed to add trade')
+      console.error('Error creating trade:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to create trade. Please try again.',
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="symbol">Symbol</Label>
-          <Combobox
-            options={availableSymbols}
-            value={formData.symbol}
-            onValueChange={(value) => setFormData({ ...formData, symbol: value })}
-            placeholder="Select symbol"
-            emptyMessage={isLoadingSymbols ? "Loading symbols..." : "No symbols found"}
-            disabled={isLoadingSymbols || availableSymbols.length === 0}
-          />
-        </div>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <FormField
+          control={form.control}
+          name="portfolio_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Portfolio</FormLabel>
+              <FormControl>
+                <Select 
+                  onValueChange={field.onChange} 
+                  defaultValue={field.value}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a portfolio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {portfolios.map((portfolio) => (
+                      <SelectItem key={portfolio.id} value={portfolio.id}>
+                        {portfolio.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="space-y-2">
-          <Label htmlFor="side">Side</Label>
-          <Select
-            value={formData.side}
-            onValueChange={(value) => setFormData({ ...formData, side: value })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="long">Long</SelectItem>
-              <SelectItem value="short">Short</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <FormField
+          control={form.control}
+          name="symbol"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Select Stock</FormLabel>
+              <FormControl>
+                <Combobox
+                  items={stocks}
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  placeholder="Search for a stock..."
+                  emptyText="No stocks found"
+                  className="w-full"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="space-y-2">
-          <Label htmlFor="entry_price">Entry Price</Label>
-          <Input
-            id="entry_price"
-            type="number"
-            step="0.01"
-            value={formData.entry_price}
-            onChange={(e) => setFormData({ ...formData, entry_price: e.target.value })}
-            required
-          />
-        </div>
+        <FormField
+          control={form.control}
+          name="entry_price"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Entry Price</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="space-y-2">
-          <Label htmlFor="quantity">Quantity</Label>
-          <Input
-            id="quantity"
-            type="number"
-            value={formData.quantity}
-            onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-            required
-          />
-        </div>
+        <FormField
+          control={form.control}
+          name="quantity"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Quantity</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="space-y-2">
-          <Label htmlFor="stop_loss">Stop Loss</Label>
-          <Input
-            id="stop_loss"
-            type="number"
-            step="0.01"
-            value={formData.stop_loss}
-            onChange={(e) => setFormData({ ...formData, stop_loss: e.target.value })}
-          />
-        </div>
+        <FormField
+          control={form.control}
+          name="strategy_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Strategy</FormLabel>
+              <FormControl>
+                <Select 
+                  onValueChange={field.onChange}
+                  value={field.value}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a strategy (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {strategies.map((strategy) => (
+                      <SelectItem key={strategy.id} value={strategy.id}>
+                        {strategy.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-        <div className="space-y-2">
-          <Label htmlFor="take_profit">Take Profit</Label>
-          <Input
-            id="take_profit"
-            type="number"
-            step="0.01"
-            value={formData.take_profit}
-            onChange={(e) => setFormData({ ...formData, take_profit: e.target.value })}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="strategy">Strategy</Label>
-          <Select
-            value={formData.strategy_id}
-            onValueChange={(value) => setFormData({ ...formData, strategy_id: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select strategy" />
-            </SelectTrigger>
-            <SelectContent>
-              {strategies.map(strategy => (
-                <SelectItem key={strategy.id} value={strategy.id}>
-                  {strategy.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2 col-span-2">
-          <Label htmlFor="notes">Notes</Label>
-          <Input
-            id="notes"
-            value={formData.notes}
-            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            placeholder="Add any notes about this trade..."
-          />
-        </div>
-      </div>
-
-      <div className="flex justify-end">
         <Button type="submit" disabled={loading}>
-          {loading ? 'Adding Trade...' : 'Add Trade'}
+          {loading ? 'Creating...' : 'Create Trade'}
         </Button>
-      </div>
-    </form>
+      </form>
+    </Form>
   )
 } 

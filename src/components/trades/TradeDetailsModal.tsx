@@ -1,129 +1,106 @@
 'use client'
 
-import React from 'react'
+import { useState } from 'react'
+import { format } from 'date-fns'
+import { Calendar as CalendarIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetDescription,
-  SheetFooter,
-  SheetClose
-} from "@/components/ui/sheet"
-import { Trade } from '@/lib/types/trade'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
+import { useToast } from '@/components/ui/use-toast'
+import type { TradeResponse } from '@/lib/types/index'
+import { tradeService } from '@/lib/services/tradeService'
+import { portfolioService } from '@/lib/services/portfolioService'
 
-interface TradeDetailsSheetProps {
-  trade: Trade
-  isOpen: boolean
-  setIsOpen: (open: boolean) => void
+interface TradeDetailsModalProps {
+  trade: TradeResponse | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
-export default function TradeDetailsSheet({ trade, isOpen, setIsOpen }: TradeDetailsSheetProps) {
+const TradeDetailsModal = ({ trade, open, onOpenChange }: TradeDetailsModalProps) => {
   if (!trade) return null
 
-  const marketLabel = trade.market === 'PH' ? 'Philippine' : 'US'
-  const currencySymbol = trade.market === 'PH' ? '₱' : '$'
-  
-  const getPnlColor = (pnl: number | null) => {
-    if (!pnl) return 'text-gray-500'
-    return pnl > 0 ? 'text-green-500' : pnl < 0 ? 'text-red-500' : 'text-gray-500'
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: trade.market === 'PH' ? 'PHP' : 'USD'
+    }).format(value)
   }
 
-  // Get strategy name safely from either string or object
-  const getStrategyName = () => {
-    if (!trade.strategy) return null
-    if (typeof trade.strategy === 'string') return trade.strategy
-    if (typeof trade.strategy === 'object' && trade.strategy.name) return trade.strategy.name
-    return null
+  const calculatePnL = () => {
+    if (!trade.exit_price) return null
+    const pnl = (trade.exit_price - trade.entry_price) * trade.quantity
+    return trade.side === 'short' ? -pnl : pnl
   }
 
-  const strategyName = getStrategyName()
+  const pnl = calculatePnL()
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
-      <SheetContent className="sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle className="flex justify-between items-center">
-            <span>{trade.symbol}</span>
-            <Badge variant={trade.side === 'long' ? 'default' : 'destructive'}>
-              {trade.side === 'long' ? 'Long' : 'Short'}
-            </Badge>
-          </SheetTitle>
-          <SheetDescription>
-            {marketLabel} {trade.asset_type} trade on {formatDate(trade.date || trade.created_at)}
-          </SheetDescription>
-        </SheetHeader>
-        
-        <div className="mt-8 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Entry Price</p>
-              <p className="text-lg font-semibold">{formatCurrency(trade.entry_price, currencySymbol)}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Quantity</p>
-              <p className="text-lg font-semibold">{trade.quantity}</p>
-            </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Trade Details - {trade.symbol}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-2 items-center gap-4">
+            <div className="font-medium">Symbol</div>
+            <div>{trade.symbol}</div>
           </div>
-          
+          <div className="grid grid-cols-2 items-center gap-4">
+            <div className="font-medium">Side</div>
+            <div className="capitalize">{trade.side}</div>
+          </div>
+          <div className="grid grid-cols-2 items-center gap-4">
+            <div className="font-medium">Entry Price</div>
+            <div>{formatCurrency(trade.entry_price)}</div>
+          </div>
           {trade.exit_price && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Exit Price</p>
-                <p className="text-lg font-semibold">{formatCurrency(trade.exit_price, currencySymbol)}</p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">P&L</p>
-                <p className={`text-lg font-semibold ${getPnlColor(trade.pnl)}`}>
-                  {trade.pnl !== null ? formatCurrency(trade.pnl, currencySymbol) : 'N/A'}
-                </p>
-              </div>
+            <div className="grid grid-cols-2 items-center gap-4">
+              <div className="font-medium">Exit Price</div>
+              <div>{formatCurrency(trade.exit_price)}</div>
             </div>
           )}
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Current Price</p>
-              <p className="text-lg font-semibold">
-                {trade.current_price ? formatCurrency(trade.current_price, currencySymbol) : 'Loading...'}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Status</p>
-              <p className="text-lg font-semibold">
-                <Badge variant={trade.status === 'open' ? 'outline' : 'secondary'}>
-                  {trade.status === 'open' ? 'Open' : 'Closed'}
-                </Badge>
-              </p>
-            </div>
+          <div className="grid grid-cols-2 items-center gap-4">
+            <div className="font-medium">Quantity</div>
+            <div>{trade.quantity}</div>
           </div>
-          
-          {strategyName && (
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Strategy</p>
-              <p className="text-lg font-semibold">{strategyName}</p>
+          {pnl !== null && (
+            <div className="grid grid-cols-2 items-center gap-4">
+              <div className="font-medium">P&L</div>
+              <div className={pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+                {formatCurrency(pnl)}
+              </div>
             </div>
           )}
-          
+          <div className="grid grid-cols-2 items-center gap-4">
+            <div className="font-medium">Status</div>
+            <div className="capitalize">{trade.status}</div>
+          </div>
+          <div className="grid grid-cols-2 items-center gap-4">
+            <div className="font-medium">Entry Date</div>
+            <div>{format(new Date(trade.entry_date), 'PPP')}</div>
+          </div>
+          {trade.exit_date && (
+            <div className="grid grid-cols-2 items-center gap-4">
+              <div className="font-medium">Exit Date</div>
+              <div>{format(new Date(trade.exit_date), 'PPP')}</div>
+            </div>
+          )}
           {trade.notes && (
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Notes</p>
-              <div className="bg-muted p-3 rounded-md mt-1">
-                <p className="text-sm whitespace-pre-line">{trade.notes}</p>
-              </div>
+            <div className="grid grid-cols-2 items-center gap-4">
+              <div className="font-medium">Notes</div>
+              <div>{trade.notes}</div>
             </div>
           )}
         </div>
-
-        <SheetFooter className="mt-6">
-          <SheetClose asChild>
-            <Button variant="outline">Close</Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
-} 
+}
+
+export default TradeDetailsModal 

@@ -1,56 +1,9 @@
-import { supabase } from './supabase'
-
-export type Portfolio = {
-  id: string
-  name: string
-  currency: string
-  initial_balance: number
-  current_balance: number
-  available_cash: number
-  total_deposits: number
-  total_withdrawals: number
-  realized_pnl: number
-  created_at: string
-  updated_at: string
-}
-
-export type PortfolioSnapshot = {
-  total_value: number
-  cash_value: number
-  equity_value: number
-  realized_pnl: number
-  unrealized_pnl: number
-  snapshot_date: string
-}
-
-export type PortfolioTransaction = {
-  id: string
-  type: 'deposit' | 'withdrawal'
-  amount: number
-  notes?: string
-  created_at: string
-}
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { Portfolio, PortfolioTransaction, PortfolioSnapshot } from '@/lib/types/index'
 
 export const portfolioService = {
-  async createPortfolio(userId: string, name: string, initialBalance: number, currency: string = 'PHP') {
-    const { data, error } = await supabase
-      .from('portfolios')
-      .insert([{
-        user_id: userId,
-        name,
-        currency,
-        initial_balance: initialBalance,
-        current_balance: initialBalance,
-        available_cash: initialBalance
-      }])
-      .select()
-      .single()
-
-    if (error) throw error
-    return data
-  },
-
-  async getPortfolios(userId: string) {
+  async getPortfolios(userId: string): Promise<Portfolio[]> {
+    const supabase = createClientComponentClient()
     const { data, error } = await supabase
       .from('portfolios')
       .select('*')
@@ -61,60 +14,102 @@ export const portfolioService = {
     return data
   },
 
-  async getPortfolio(portfolioId: string) {
+  async createPortfolio(
+    userId: string,
+    portfolioOrName: string | Omit<Portfolio, 'id' | 'user_id' | 'created_at' | 'updated_at'>,
+    initialBalance?: number,
+    currency?: string
+  ): Promise<Portfolio> {
+    const supabase = createClientComponentClient()
+    
+    // Determine if we're using the string version or the portfolio object version
+    let insertData: any;
+    
+    if (typeof portfolioOrName === 'string') {
+      // It's the (userId, name, initialBalance, currency) version
+      insertData = {
+        user_id: userId,
+        name: portfolioOrName,
+        currency: currency || 'PHP',
+        initial_balance: initialBalance,
+        current_balance: initialBalance,
+        available_cash: initialBalance,
+        equity_value: initialBalance, // Add equity_value
+        total_deposits: initialBalance,
+        total_withdrawals: 0,
+        realized_pnl: 0
+      };
+    } else {
+      // It's the (userId, portfolioObject) version
+      const portfolio = portfolioOrName;
+      insertData = {
+        user_id: userId,
+        name: portfolio.name,
+        currency: portfolio.currency,
+        initial_balance: portfolio.initial_balance,
+        current_balance: portfolio.initial_balance,
+        available_cash: portfolio.initial_balance,
+        equity_value: portfolio.initial_balance, // Add equity_value
+        total_deposits: portfolio.initial_balance,
+        total_withdrawals: 0,
+        realized_pnl: 0
+      };
+    }
+    
     const { data, error } = await supabase
       .from('portfolios')
-      .select('*')
-      .eq('id', portfolioId)
+      .insert(insertData)
+      .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('Error creating portfolio in service:', error)
+      throw error
+    }
     return data
   },
 
-  async addTransaction(portfolioId: string, type: 'deposit' | 'withdrawal', amount: number, notes?: string) {
-    const { data: portfolio } = await supabase
+  async updatePortfolioAfterTrade(
+    portfolioId: string,
+    tradeAmount: number,
+    isClosing: boolean
+  ): Promise<void> {
+    const supabase = createClientComponentClient()
+    const { data: portfolio, error: fetchError } = await supabase
       .from('portfolios')
       .select('*')
       .eq('id', portfolioId)
       .single()
 
-    if (!portfolio) throw new Error('Portfolio not found')
+    if (fetchError) throw fetchError
 
-    const { error: transactionError } = await supabase
-      .from('portfolio_transactions')
-      .insert([{
-        portfolio_id: portfolioId,
-        type,
-        amount,
-        notes
-      }])
-
-    if (transactionError) throw transactionError
-
-    // Update portfolio balances
     const { error: updateError } = await supabase
       .from('portfolios')
       .update({
-        current_balance: type === 'deposit' 
-          ? portfolio.current_balance + amount 
-          : portfolio.current_balance - amount,
-        available_cash: type === 'deposit'
-          ? portfolio.available_cash + amount
-          : portfolio.available_cash - amount,
-        total_deposits: type === 'deposit'
-          ? portfolio.total_deposits + amount
-          : portfolio.total_deposits,
-        total_withdrawals: type === 'withdrawal'
-          ? portfolio.total_withdrawals + amount
-          : portfolio.total_withdrawals
+        available_cash: isClosing
+          ? portfolio.available_cash + tradeAmount
+          : portfolio.available_cash - tradeAmount
       })
       .eq('id', portfolioId)
 
     if (updateError) throw updateError
   },
 
-  async getTransactions(portfolioId: string) {
+  async validateTradeAmount(portfolioId: string, tradeAmount: number): Promise<boolean> {
+    const supabase = createClientComponentClient()
+    const { data: portfolio, error } = await supabase
+      .from('portfolios')
+      .select('available_cash')
+      .eq('id', portfolioId)
+      .single()
+
+    if (error) throw error
+    console.log(`Validating trade amount: ${tradeAmount} against available cash: ${portfolio.available_cash}`)
+    return portfolio.available_cash >= tradeAmount
+  },
+
+  async getTransactions(portfolioId: string): Promise<PortfolioTransaction[]> {
+    const supabase = createClientComponentClient()
     const { data, error } = await supabase
       .from('portfolio_transactions')
       .select('*')
@@ -125,7 +120,74 @@ export const portfolioService = {
     return data
   },
 
-  async getSnapshots(portfolioId: string, startDate: string, endDate: string) {
+  async createTransaction(
+    portfolioId: string,
+    transaction: Omit<PortfolioTransaction, 'id' | 'created_at' | 'portfolio_id'>
+  ): Promise<void> {
+    const supabase = createClientComponentClient()
+    const { error } = await supabase
+      .from('portfolio_transactions')
+      .insert({
+        portfolio_id: portfolioId,
+        ...transaction
+      })
+
+    if (error) throw error
+
+    // Update portfolio balance
+    const { data: portfolio, error: fetchError } = await supabase
+      .from('portfolios')
+      .select('*')
+      .eq('id', portfolioId)
+      .single()
+
+    if (fetchError) throw fetchError
+
+    // For withdrawals, transaction.amount is already negative, so we add it
+    // For deposits, transaction.amount is positive, so we add it
+    const { error: updateError } = await supabase
+      .from('portfolios')
+      .update({
+        current_balance: portfolio.current_balance + transaction.amount,
+        available_cash: portfolio.available_cash + transaction.amount,
+        total_deposits:
+          transaction.type === 'deposit'
+            ? portfolio.total_deposits + Math.abs(transaction.amount)
+            : portfolio.total_deposits,
+        total_withdrawals:
+          transaction.type === 'withdrawal'
+            ? portfolio.total_withdrawals + Math.abs(transaction.amount)
+            : portfolio.total_withdrawals
+      })
+      .eq('id', portfolioId)
+
+    if (updateError) throw updateError
+  },
+
+  async addTransaction(
+    portfolioId: string,
+    type: 'deposit' | 'withdrawal',
+    amount: number,
+    notes?: string
+  ): Promise<void> {
+    const adjustedAmount = type === 'withdrawal' ? -Math.abs(amount) : Math.abs(amount)
+    
+    return this.createTransaction(
+      portfolioId,
+      {
+        amount: adjustedAmount,
+        type,
+        notes: notes === undefined ? `${type === 'deposit' ? 'Deposit' : 'Withdrawal'} of ${Math.abs(adjustedAmount)}` : notes
+      }
+    )
+  },
+
+  async getSnapshots(
+    portfolioId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<PortfolioSnapshot[]> {
+    const supabase = createClientComponentClient()
     const { data, error } = await supabase
       .from('portfolio_snapshots')
       .select('*')
@@ -138,14 +200,15 @@ export const portfolioService = {
     return data
   },
 
-  async createSnapshot(portfolioId: string, snapshot: Omit<PortfolioSnapshot, 'id' | 'created_at'>) {
+  async createSnapshot(portfolioId: string, snapshot: Omit<PortfolioSnapshot, 'id' | 'created_at' | 'portfolio_id'>) {
+    const supabase = createClientComponentClient()
     const { error } = await supabase
       .from('portfolio_snapshots')
-      .insert([{
+      .insert({
         portfolio_id: portfolioId,
         ...snapshot
-      }])
+      })
 
     if (error) throw error
-  }
+  },
 } 

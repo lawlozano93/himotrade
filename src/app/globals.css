@@ -109,4 +109,77 @@
   .stats-grid {
     @apply grid grid-cols-1 md:grid-cols-3 gap-6 mb-8;
   }
+
+  .scrollbar-custom {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156 163 175) transparent;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    background-color: rgb(156 163 175);
+    border-radius: 20px;
+    border: 3px solid transparent;
+  }
+}
+
+/* Custom Calendar Styles */
+.rdp {
+  margin: 0;
+  --rdp-cell-size: 40px !important;
+  --rdp-accent-color: hsl(var(--primary)) !important;
+  --rdp-background-color: hsl(var(--primary)) !important;
+  --rdp-accent-color-dark: hsl(var(--primary)) !important;
+  --rdp-background-color-dark: hsl(var(--primary)) !important;
+  --rdp-outline: 2px solid var(--rdp-accent-color) !important;
+  --rdp-outline-selected: 2px solid var(--rdp-accent-color) !important;
+}
+
+.rdp-months {
+  display: flex !important;
+  justify-content: center !important;
+}
+
+.rdp-month {
+  background-color: hsl(var(--background)) !important;
+  border-radius: var(--radius) !important;
+  padding: 16px !important;
+}
+
+.rdp-caption {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 0 4px !important;
+  margin-bottom: 8px !important;
+}
+
+.rdp-nav {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.rdp-nav_button {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.rdp-head_cell,
+.rdp-day {
+  width: var(--rdp-cell-size) !important;
+  height: var(--rdp-cell-size) !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
 }

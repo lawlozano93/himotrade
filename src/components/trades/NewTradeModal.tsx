@@ -1,35 +1,34 @@
 'use client'
 
-import { Button } from "@/components/ui/button"
+import { useState } from 'react'
 import {
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalTrigger,
-} from "@/components/ui/modal"
-import { NewTradeForm } from "./NewTradeForm"
-import { useState } from "react"
+  Dialog,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import TradeForm from '@/components/trades/TradeForm'
 
-export function NewTradeModal({ onTradeAdded }: { onTradeAdded?: () => void }) {
-  const [open, setOpen] = useState(false)
+interface NewTradeModalProps {
+  portfolioId: string
+  onTradeAdded?: () => void
+}
 
-  const handleSuccess = () => {
-    setOpen(false)
-    onTradeAdded?.()
-  }
+export function NewTradeModal({ portfolioId, onTradeAdded }: NewTradeModalProps) {
+  const [isOpen, setIsOpen] = useState(false)
 
   return (
-    <Modal open={open} onOpenChange={setOpen}>
-      <ModalTrigger asChild>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
         <Button>Add New Trade</Button>
-      </ModalTrigger>
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Add New Trade</ModalTitle>
-        </ModalHeader>
-        <NewTradeForm onSuccess={handleSuccess} />
-      </ModalContent>
-    </Modal>
+      </DialogTrigger>
+      <TradeForm
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        portfolioId={portfolioId}
+        onTradeCreated={() => {
+          onTradeAdded?.()
+        }}
+      />
+    </Dialog>
   )
 } 

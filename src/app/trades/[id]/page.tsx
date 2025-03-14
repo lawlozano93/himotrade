@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
+import { PortfolioDetails } from '@/components/trades/PortfolioDetails'
 
 type Trade = {
   id: string
@@ -24,6 +25,7 @@ type Trade = {
   take_profit: number | null
   notes: string | null
   strategy_id: string | null
+  portfolio_id: string
   strategies?: {
     name: string
   }
@@ -245,34 +247,6 @@ export default function TradePage() {
                     disabled={saving}
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="stop_loss">Stop Loss</Label>
-                  <Input
-                    id="stop_loss"
-                    type="number"
-                    step="0.01"
-                    value={editedTrade.stop_loss || ''}
-                    onChange={e =>
-                      setEditedTrade({ ...editedTrade, stop_loss: parseFloat(e.target.value) })
-                    }
-                    disabled={saving}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="take_profit">Take Profit</Label>
-                  <Input
-                    id="take_profit"
-                    type="number"
-                    step="0.01"
-                    value={editedTrade.take_profit || ''}
-                    onChange={e =>
-                      setEditedTrade({ ...editedTrade, take_profit: parseFloat(e.target.value) })
-                    }
-                    disabled={saving}
-                  />
-                </div>
               </>
             ) : (
               <>
@@ -280,20 +254,6 @@ export default function TradePage() {
                   <div className="space-y-2">
                     <Label>Exit Price</Label>
                     <p className="text-lg">${trade.exit_price}</p>
-                  </div>
-                )}
-
-                {trade.stop_loss && (
-                  <div className="space-y-2">
-                    <Label>Stop Loss</Label>
-                    <p className="text-lg">${trade.stop_loss}</p>
-                  </div>
-                )}
-
-                {trade.take_profit && (
-                  <div className="space-y-2">
-                    <Label>Take Profit</Label>
-                    <p className="text-lg">${trade.take_profit}</p>
                   </div>
                 )}
               </>
@@ -349,6 +309,12 @@ export default function TradePage() {
           </CardContent>
         </Card>
       </div>
+
+      {trade.portfolio_id && (
+        <div className="mt-6">
+          <PortfolioDetails portfolioId={trade.portfolio_id} />
+        </div>
+      )}
     </div>
   )
 } 

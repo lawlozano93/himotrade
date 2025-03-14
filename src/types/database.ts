@@ -25,6 +25,10 @@ export type Profile = {
   avatar_url: string | null
   trading_style: string | null
   preferred_timeframe: string | null
+  first_name: string | null
+  last_name: string | null
+  birthday: string | null
+  updated_at: string | null
 }
 
 export type Strategy = {

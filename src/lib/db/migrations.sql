@@ -84,7 +84,8 @@ CREATE TABLE trades (
   market VARCHAR(10) CHECK (market IN ('US', 'PH')),
   portfolio_id UUID REFERENCES portfolios(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  current_price DECIMAL(15,2)
 );
 
 -- Create portfolio_snapshots table
@@ -112,29 +113,109 @@ CREATE TABLE portfolio_transactions (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Create trade_remarks table
+CREATE TABLE IF NOT EXISTS trade_remarks (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Create trade_images table
+CREATE TABLE IF NOT EXISTS trade_images (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  caption TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Create trade_history table for tracking all actions
+CREATE TABLE IF NOT EXISTS trade_history (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  trade_id UUID REFERENCES trades(id) ON DELETE CASCADE,
+  action_type VARCHAR(50) NOT NULL CHECK (
+    action_type IN (
+      'open',
+      'close',
+      'adjust_stop_loss',
+      'adjust_take_profit',
+      'add_position',
+      'reduce_position',
+      'add_remark',
+      'add_image'
+    )
+  ),
+  details JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Create function to validate trade against portfolio balance
+CREATE OR REPLACE FUNCTION validate_trade_balance()
+RETURNS TRIGGER AS $$
+DECLARE
+  portfolio_cash DECIMAL;
+  trade_value DECIMAL;
+BEGIN
+  -- Get available cash (not current_balance)
+  SELECT available_cash INTO portfolio_cash
+  FROM portfolios
+  WHERE id = NEW.portfolio_id;
+
+  -- Calculate trade value
+  trade_value := NEW.entry_price * NEW.quantity;
+
+  -- Check if there's enough cash for new trade
+  IF TG_OP = 'INSERT' AND trade_value > portfolio_cash THEN
+    RAISE EXCEPTION 'Insufficient portfolio balance';
+  END IF;
+
+  -- For position increases
+  IF TG_OP = 'UPDATE' AND NEW.quantity > OLD.quantity THEN
+    trade_value := NEW.entry_price * (NEW.quantity - OLD.quantity);
+    IF trade_value > portfolio_cash THEN
+      RAISE EXCEPTION 'Insufficient portfolio balance for position increase';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for trade balance validation
+CREATE TRIGGER validate_trade_balance_trigger
+BEFORE INSERT OR UPDATE ON trades
+FOR EACH ROW
+EXECUTE FUNCTION validate_trade_balance();
+
 -- Create function to update portfolio balance
 CREATE OR REPLACE FUNCTION update_portfolio_balance()
 RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    -- For new trades, update available cash and current balance
+    -- Reduce available_cash when opening new trade and update current_balance
     UPDATE portfolios
-    SET available_cash = available_cash - (NEW.entry_price * NEW.quantity),
-        current_balance = current_balance - (NEW.entry_price * NEW.quantity),
-        updated_at = NOW()
+    SET 
+      available_cash = available_cash - (NEW.entry_price * NEW.quantity),
+      -- current_balance stays the same since total value doesn't change when opening a position
+      updated_at = NOW()
     WHERE id = NEW.portfolio_id;
   ELSIF TG_OP = 'UPDATE' THEN
-    -- For trade updates (e.g., closing a position)
     IF NEW.status = 'closed' AND OLD.status = 'open' THEN
+      -- Add back to available_cash when closing trade and update current_balance with PnL
       UPDATE portfolios
-      SET available_cash = available_cash + (NEW.exit_price * NEW.quantity),
-          realized_pnl = realized_pnl + (
-            CASE 
-              WHEN NEW.side = 'long' THEN (NEW.exit_price - NEW.entry_price) * NEW.quantity
-              ELSE (NEW.entry_price - NEW.exit_price) * NEW.quantity
-            END
-          ),
-          updated_at = NOW()
+      SET 
+        available_cash = available_cash + (NEW.exit_price * NEW.quantity),
+        current_balance = current_balance + (NEW.exit_price - NEW.entry_price) * NEW.quantity,
+        realized_pnl = realized_pnl + (NEW.exit_price - NEW.entry_price) * NEW.quantity,
+        updated_at = NOW()
+      WHERE id = NEW.portfolio_id;
+    ELSIF NEW.quantity != OLD.quantity AND NEW.status = 'open' THEN
+      -- Handle position size changes
+      UPDATE portfolios
+      SET 
+        available_cash = available_cash - (NEW.entry_price * (NEW.quantity - OLD.quantity)),
+        updated_at = NOW()
       WHERE id = NEW.portfolio_id;
     END IF;
   END IF;
@@ -142,8 +223,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create trigger for trade updates
-DROP TRIGGER IF EXISTS update_portfolio_balance_trigger ON trades;
+-- Create trigger for portfolio balance updates
 CREATE TRIGGER update_portfolio_balance_trigger
 AFTER INSERT OR UPDATE ON trades
 FOR EACH ROW
