@@ -1,63 +1,94 @@
-import { createServerClient } from '@supabase/ssr'
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
+// Define routes that don't require authentication
+const PUBLIC_PATHS = [
+  '/signup',
+  '/auth/callback',
+  '/_next',
+  '/static',
+  '/api/auth',
+  '/favicon.ico',
+  '/images',
+  '/fonts'
+]
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          req.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          res.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: any) {
-          req.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          res.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-        },
-      },
+// Define auth routes (routes that should redirect to /trades if user is authenticated)
+const AUTH_ROUTES = ['/login', '/signup']
+
+export async function middleware(request: NextRequest) {
+  try {
+    const path = request.nextUrl.pathname
+    
+    // Skip middleware for public static files
+    if (PUBLIC_PATHS.some(p => path.startsWith(p))) {
+      return NextResponse.next()
     }
-  )
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    // Create a response to modify
+    const res = NextResponse.next()
 
-  // If there's no session and the user is trying to access a protected route
-  if (!session && !req.nextUrl.pathname.startsWith('/login') && !req.nextUrl.pathname.startsWith('/signup')) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    // Create the Supabase client
+    const supabase = createMiddlewareClient({ req: request, res })
+
+    // Refresh session if expired - this will update the session cookie if needed
+    const {
+      data: { session },
+      error: sessionError
+    } = await supabase.auth.getSession()
+
+    // Handle session errors
+    if (sessionError) {
+      console.error('Session error:', sessionError)
+      return handleAuthRedirect(request, path)
+    }
+
+    // Determine route type
+    const isAuthRoute = AUTH_ROUTES.includes(path)
+    const isProtectedRoute = !isAuthRoute && !PUBLIC_PATHS.some(p => path.startsWith(p))
+
+    // Handle auth routes (login, signup)
+    if (isAuthRoute && session) {
+      return NextResponse.redirect(new URL('/trades', request.url))
+    }
+
+    // Handle protected routes
+    if (isProtectedRoute && !session) {
+      return handleAuthRedirect(request, path)
+    }
+
+    // Add user context to request headers for server components
+    if (session) {
+      res.headers.set('x-user-id', session.user.id)
+      res.headers.set('x-user-email', session.user.email || '')
+    }
+
+    return res
+  } catch (error) {
+    console.error('Middleware error:', error)
+    return handleAuthRedirect(request)
   }
-
-  // If there's a session and the user is trying to access login/signup
-  if (session && (req.nextUrl.pathname.startsWith('/login') || req.nextUrl.pathname.startsWith('/signup'))) {
-    return NextResponse.redirect(new URL('/trades', req.url))
-  }
-
-  return res
 }
 
+function handleAuthRedirect(request: NextRequest, from?: string) {
+  const redirectUrl = new URL('/login', request.url)
+  if (from && !AUTH_ROUTES.includes(from)) {
+    redirectUrl.searchParams.set('from', from)
+  }
+  return NextResponse.redirect(redirectUrl)
+}
+
+// Only run middleware on routes that need session checking
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+  ],
 } 

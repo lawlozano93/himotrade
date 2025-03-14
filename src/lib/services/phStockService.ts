@@ -1,11 +1,11 @@
 interface Stock {
-  name: string
   symbol: string
+  name: string
   price: {
     currency: string
     amount: number
   }
-  percentChange: number
+  percent_change: number
   volume: number
 }
 
@@ -14,79 +14,132 @@ interface PhisixResponse {
   as_of: string
 }
 
-let cachedStocks: string[] = []
-let lastFetchTime: number = 0
-const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+export interface StockOption {
+  value: string  // symbol
+  label: string  // symbol only
+}
 
-// Default PH stock symbols as fallback
-export const DEFAULT_PH_STOCKS = [
-  'AC', 'ALI', 'AP', 'BDO', 'BPI', 'GLO', 'ICT', 'JFC', 'MBT', 'MER',
-  'PGOLD', 'RLC', 'SECB', 'SM', 'SMC', 'SMPH', 'TEL', 'URC', 'VLL', 'WLCON',
-  'AEV', 'AGI', 'BLOOM', 'CEB', 'DMC', 'EMP', 'FGEN', 'FPH', 'GTCap', 'IMI',
-  'LTG', 'MAC', 'MAXS', 'MEG', 'MPI', 'NIKL', 'PCOR', 'PXP', 'RWM', 'SCC'
-];
+// Default PH stock symbols in case API fails
+export const DEFAULT_PH_STOCKS: StockOption[] = [
+  { value: 'AC', label: 'AC' },
+  { value: 'ALI', label: 'ALI' },
+  { value: 'AP', label: 'AP' },
+  { value: 'BDO', label: 'BDO' },
+  { value: 'BPI', label: 'BPI' },
+  { value: 'GLO', label: 'GLO' },
+  { value: 'ICT', label: 'ICT' },
+  { value: 'JFC', label: 'JFC' },
+  { value: 'MBT', label: 'MBT' },
+  { value: 'MEG', label: 'MEG' },
+  { value: 'MER', label: 'MER' },
+  { value: 'PGOLD', label: 'PGOLD' },
+  { value: 'RLC', label: 'RLC' },
+  { value: 'SM', label: 'SM' },
+  { value: 'SMC', label: 'SMC' },
+  { value: 'TEL', label: 'TEL' },
+  { value: 'URC', label: 'URC' },
+  { value: 'VLL', label: 'VLL' }
+]
 
-export async function getPhStocks(): Promise<string[]> {
-  const now = Date.now()
-  
-  // Return cached data if it's still valid
-  if (cachedStocks.length > 0 && (now - lastFetchTime) < CACHE_DURATION) {
-    console.log(`[PhStockService] Using cached stock list (${cachedStocks.length} items)`)
-    return cachedStocks
-  }
+const CACHE_KEY = 'ph_stocks'
+const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
 
+interface CacheData {
+  timestamp: number
+  stocks: StockOption[]
+}
+
+function getCachedStocks(): StockOption[] | null {
   try {
-    console.log('[PhStockService] Fetching updated stock list from phisix...')
-    
-    // Setting a timeout of 5 seconds for the fetch operation
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const response = await fetch('https://phisix-api3.appspot.com/stocks.json', {
-      signal: controller.signal
-    }).finally(() => clearTimeout(timeoutId))
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch stocks: ${response.status} ${response.statusText}`)
+    const cached = localStorage.getItem(CACHE_KEY)
+    if (!cached) return null
+
+    const data: CacheData = JSON.parse(cached)
+    const now = Date.now()
+
+    if (now - data.timestamp > CACHE_DURATION) {
+      localStorage.removeItem(CACHE_KEY)
+      return null
     }
 
-    const responseText = await response.text(); // Get raw text first for debugging
-    console.log(`[PhStockService] Raw response length: ${responseText.length} characters`);
-    
-    let data: PhisixResponse;
-    try {
-      data = JSON.parse(responseText);
-    } catch (error) {
-      console.error('[PhStockService] Error parsing JSON:', error);
-      console.error('[PhStockService] Response text snippet:', responseText.substring(0, 200) + '...');
-      throw new Error('Failed to parse JSON response');
-    }
-    
-    if (!data.stock || !Array.isArray(data.stock)) {
-      console.error('[PhStockService] Unexpected response structure:', data);
-      throw new Error('Unexpected response structure');
-    }
-    
-    // Extract and sort symbols
-    cachedStocks = data.stock
-      .map(stock => stock.symbol)
-      .sort((a, b) => a.localeCompare(b))
-
-    lastFetchTime = now
-    console.log(`[PhStockService] Successfully fetched ${cachedStocks.length} stocks from phisix-api3`)
-    
-    return cachedStocks
+    return data.stocks
   } catch (error) {
-    console.error('[PhStockService] Error fetching PH stocks:', error)
-    
-    // Return cached data if available, even if expired
-    if (cachedStocks.length > 0) {
-      console.log('[PhStockService] Returning cached stock list due to fetch error')
-      return cachedStocks
+    console.error('Error reading cached stocks:', error)
+    localStorage.removeItem(CACHE_KEY)
+    return null
+  }
+}
+
+function cacheStocks(stocks: StockOption[]) {
+  try {
+    const data: CacheData = {
+      timestamp: Date.now(),
+      stocks
     }
-    
-    // Return default stock list if no cached data is available
-    console.log('[PhStockService] Returning default stock list due to fetch error and no cache')
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+  } catch (error) {
+    console.error('Error caching stocks:', error)
+  }
+}
+
+export async function getPhStocks(): Promise<StockOption[]> {
+  try {
+    // Check cache first
+    const cached = getCachedStocks()
+    if (cached) {
+      return cached
+    }
+
+    // Try primary API first
+    try {
+      const response = await fetch('https://phisix-api3.appspot.com/stocks.json')
+      if (!response.ok) {
+        throw new Error('Failed to fetch stocks from primary API')
+      }
+
+      const data: PhisixResponse = await response.json()
+      if (!data.stock || !Array.isArray(data.stock) || data.stock.length === 0) {
+        throw new Error('Invalid or empty data from primary API')
+      }
+
+      const stocks = data.stock
+        .map(stock => ({
+          value: stock.symbol,
+          label: stock.symbol
+        }))
+        .sort((a, b) => a.value.localeCompare(b.value))
+
+      // Cache the results
+      cacheStocks(stocks)
+      return stocks
+    } catch (primaryError) {
+      console.error('Error with primary API:', primaryError)
+      
+      // Try backup API
+      const response = await fetch('https://phisix-api4.appspot.com/stocks.json')
+      if (!response.ok) {
+        throw new Error('Failed to fetch stocks from backup API')
+      }
+
+      const data: PhisixResponse = await response.json()
+      if (!data.stock || !Array.isArray(data.stock) || data.stock.length === 0) {
+        throw new Error('Invalid or empty data from backup API')
+      }
+
+      const stocks = data.stock
+        .map(stock => ({
+          value: stock.symbol,
+          label: stock.symbol
+        }))
+        .sort((a, b) => a.value.localeCompare(b.value))
+
+      // Cache the results
+      cacheStocks(stocks)
+      return stocks
+    }
+  } catch (error) {
+    console.error('Error fetching PH stocks:', error)
+    // Return default list if all APIs fail
     return DEFAULT_PH_STOCKS
   }
 } 

@@ -1,20 +1,11 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { AppLayout } from "@/components/layout/AppLayout";
-import { Toaster } from 'sonner'
+import { Toaster } from '@/components/ui/toaster'
+import { AppLayout } from '@/components/layout/AppLayout'
+import '@/styles/globals.css'
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: 'swap',
-  preload: true,
-  adjustFontFallback: true
-});
-
-export const metadata: Metadata = {
-  title: "HimoTrades",
-  description: "Track and analyze your trading performance",
-};
+export const metadata = {
+  title: 'Trading Journal',
+  description: 'Track and analyze your trades',
+}
 
 export default function RootLayout({
   children,
@@ -22,11 +13,13 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <AppLayout>{children}</AppLayout>
-        <Toaster position="top-right" />
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <AppLayout>
+          {children}
+        </AppLayout>
+        <Toaster />
       </body>
     </html>
-  );
+  )
 }

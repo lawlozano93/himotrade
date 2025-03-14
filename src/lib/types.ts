@@ -1,24 +1,45 @@
-export type Trade = {
-  id?: string
+export interface Portfolio {
+  id: string
   user_id: string
+  name: string
+  initial_balance: number
+  available_cash: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Trade {
+  id: string
+  portfolio_id: string
   symbol: string
   side: 'long' | 'short'
   entry_price: number
-  exit_price: number | null
+  exit_price?: number
   quantity: number
-  status: 'open' | 'closed'
-  strategy_id: string
   entry_date: string
-  exit_date: string | null
-  stop_loss: number | null
-  take_profit: number | null
-  notes: string | null
-  risk_reward_ratio: number | null
-  pnl: number | null
-  asset_type: 'stocks' | 'forex' | 'crypto'
-  market: 'US' | 'PH' | null
-  created_at?: string
+  exit_date?: string
+  status: 'open' | 'closed'
+  notes?: string
+  pnl?: number
+  current_price?: number
+  strategy?: string
+  remarks?: string[]
+  images?: string[]
+}
+
+export interface TradeRemark {
+  id: string
+  trade_id: string
+  content: string
+  created_at: string
   updated_at?: string
+}
+
+export interface TradeImage {
+  id: string
+  trade_id: string
+  url: string
+  created_at: string
 }
 
 export interface Profile {
